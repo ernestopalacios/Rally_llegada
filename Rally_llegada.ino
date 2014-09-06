@@ -76,6 +76,8 @@ void imprimir (){
      hora_i=hour();
      minuto_i=minute();
      segundo_i=second();
+     
+     
   }
   
 
@@ -100,21 +102,43 @@ void loop(void)
       bandera=0;
       bandera3=1;
       lcd.setCursor(0,0);
-      lcd.print(" IMPRESORA OFF ");
+      lcd.print("OFF");
    }
    else if(boton2==1 && bandera3==1){
      bandera3=0;
      lcd.setCursor(0,0);
-     lcd.print(" IMPRESORA ON  ");
+     lcd.print("ON ");
    }
    
    
    
    if (bandera==1 && boton2==1){
+     
      numero++;
      str_hora_i=String(hora_i);
      str_minuto_i=String(minuto_i);
      str_segundo_i=String(segundo_i);
+     
+     lcd.setCursor(3,0);
+     if(hora_i<10){
+       lcd.print("0"+str_hora_i);
+     }
+     else
+       lcd.print(str_hora_i);
+     lcd.setCursor(5,0);
+     lcd.print(":");
+     if (minuto_i<10){
+       lcd.print("0"+str_minuto_i);
+     }
+     else
+       lcd.print(str_minuto_i);
+     lcd.setCursor(8,0);
+     lcd.print(":");
+     if (segundo_i<10){
+       lcd.print("0"+str_segundo_i+"."+str_mili_segundo+"  ");
+     }
+     else
+       lcd.print(str_segundo_i+"."+str_mili_segundo+"  ");
      
      Serial.print(encabezado);
      for(k=0;k<40;k++){
