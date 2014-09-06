@@ -1,9 +1,19 @@
-#include <Time.h>
+//#include <Time.h>
 #include <stdarg.h>
 #include <LiquidCrystal.h>
 #include <LCDKeypad.h>
 
+// Para trabajar con el RTC
+#include <Wire.h>
+#include "RTClib.h"
+
+#define PIN_PULSO_1HZ       2
+
+RTC_DS1307 rtc;       // Crea el objeto para RTC
+Ds1307SqwPinMode mode;
+
 LCDKeypad lcd;
+
 
 ////////// VARIABLES ///////////
 volatile int numero=0;
@@ -13,6 +23,13 @@ int segundo=0;
 volatile int hora_i=0;
 volatile int minuto_i=0;
 volatile int segundo_i=0;
+volatile int mili_segundo_i=0;   // Aumentado variable milisegundo
+
+// Segundos previos para saber en que momento cambia la interrupcion
+int _prev_segundo;
+int _prev_minuto;
+int _prev_hora;
+
 int mili_segundo=0;
 int hora2=0;
 int minuto2=0;
@@ -26,6 +43,8 @@ String str_segundo;
 String str_hora_i;
 String str_minuto_i;
 String str_segundo_i;
+//String str_mili_segundo_i;
+
 String str_numero;
 String str_mili_segundo;
 char mili_segundo_char[3];
@@ -44,6 +63,10 @@ char val[200];
 char encabezado[8];
 int k=0;
 
+//////////////////////////////
+
+   int bandera_IGUALAR_GPS = 0;
+   int bandera_IGUALAR_RTC = 0;
 
 
 //////////////////////////////
@@ -51,6 +74,50 @@ int k=0;
 
 void setup(void)
 {
+   DateTime now;     // Objeto donde guardarla hora
+   
+   //***              INICIALIZACION DEL RTC            ***//
+   Wire.begin();
+   rtc.begin();
+   delayMicroseconds(500);
+
+   mode = SquareWave1HZ;
+   delayMicroseconds(500);
+
+   rtc.writeSqwPinMode(mode);
+
+   if (! rtc.isrunning() ) 
+   {
+      Serial.println("RTC is NOT running!");
+      // following line sets the RTC to the date & time this sketch was compiled
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      // This line sets the RTC with an explicit date & time, for example to set
+      // January 21, 2014 at 3am you would call:
+      // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+   }
+
+   now = rtc.now();
+
+
+   // HORA IGUALADA DESDE EL RTC EN ESTE INSTANTE!!!!
+   hora = now.hour();
+   minuto = now.minute();
+   segundo = now.second();
+
+   Serial.print(now.year(), DEC);
+   Serial.print('/');
+   Serial.print(now.month(), DEC);
+   Serial.print('/');
+   Serial.print(now.day(), DEC);
+   Serial.print(' ');
+   Serial.print(now.hour(), DEC);
+   Serial.print(':');
+   Serial.print(now.minute(), DEC);
+   Serial.print(':');
+   Serial.print(now.second(), DEC);
+   Serial.println();
+
+
    lcd.begin(16, 2);
    lcd.clear();
    lcd.print("     TIEMPO");
@@ -58,11 +125,42 @@ void setup(void)
    pinMode(11, INPUT);
    attachInterrupt(1, imprimir, RISING);
    Serial.begin(9600);
-   setTime(0,0,0,18,18,2014);
+   
+
+   // Abre la comunicacion con la impresora
    encabezado[0]=(1);encabezado[1]=('T');encabezado[2]=('Q');encabezado[3]=('-');encabezado[4]=('0');encabezado[5]=('0');encabezado[6]=('0');encabezado[7]=('0');
-   hora=hour();
-   minuto=minute();
-   segundo=second();
+
+   // INTERRUPCION CADA SEGUNDO
+   // El chip DS1307 dara un flanco positivo cada segundo exacto. Se usa este disparo para aumentar
+   // la variable segundos y dibujar el tiempo en el dispolay.
+   attachInterrupt(0, pulso, CHANGE); 
+   
+}
+
+  
+// Para aumentar los segundos con cada pulso del RTC   
+void pulso(void){
+
+   // El codigo dentro del IF se ejecuta cada segundo
+   if( digitalRead(PIN_PULSO_1HZ) )
+   {
+       
+      segundo++;
+
+      if( segundo > 59){
+         segundo = 0;
+         minuto ++;
+
+         if( minuto > 59 ){
+            minuto = 0;
+            hora++;
+
+            if( hora > 23 ){
+               hora = 0;
+            }
+         }
+      }
+   }
 }
 
 
@@ -73,9 +171,14 @@ void imprimir (){
      else{
        bandera=0;
      }
-     hora_i=hour();
-     minuto_i=minute();
-     segundo_i=second();
+
+     // Toma las variables de Hora directamente 
+     // desde las variables del Arduino.
+     // Las cuales han sido igualdas deacuerdo al RTC/GPS
+     hora_i=hora;
+     minuto_i=minuto;
+     segundo_i=segundo;
+     mili_segundo_i = mili_segundo;
      
      
   }
@@ -87,17 +190,19 @@ void loop(void)
    //boton=digitalRead(3);
    boton2=digitalRead(11);
    //boton3=digitalRead(12);
-   if (mili_segundo>100 || segundo!=second()){
-     mili_segundo=0;
-     hora=hour();
-     minuto=minute();
-     segundo=second();
+   //
+   // si el MILISEGUNDO esta en 100 ó si se ha actualizado el milisegundo
+   if (mili_segundo>99 || _prev_segundo != segundo){
+     
+      mili_segundo=0;
+      _prev_segundo =  segundo;
    }
    else{
-     mili_segundo=mili_segundo+1;
-     delay(5);
+      mili_segundo=mili_segundo+1;
+      delay(5);
    }
    
+   // SE IMPRIME O NO SE IMPRIME
    if(boton2==0 && bandera3==0){
       bandera=0;
       bandera3=1;
@@ -111,13 +216,14 @@ void loop(void)
    }
    
    
-   
+   // Se prepara los ASCII PARA IMPRIMIR
    if (bandera==1 && boton2==1){
      
      numero++;
      str_hora_i=String(hora_i);
      str_minuto_i=String(minuto_i);
      str_segundo_i=String(segundo_i);
+     str_mili_segundo=String(mili_segundo_i);
      
      lcd.setCursor(3,0);
      if(hora_i<10){
@@ -288,12 +394,25 @@ void loop(void)
         else{
           hora2=hora2;
         }
+
+        hora = hora2;
+
         buffer_minuto=(int)(val[41]);
         minuto2=(buffer_minuto-48)*10+((int)(val[42])-48);
+
+        minuto = minuto2;
+
         buffer_segundo=(int)(val[43]);
         segundo2=((buffer_segundo-48)*10+((int)(val[44])-48));
-        setTime(hora2,minuto2,segundo2,5,9,2014);
+
+
+        segundo = segundo2;
+
+        //setTime(hora2,minuto2,segundo2,5,9,2014);
         mili_segundo=0;
+
+        Serial.print("SE OBTUVO TRAMA GPS!!! \n");
+
         for (j=0;j<200;j++){
           val[j]=0;
         }     
